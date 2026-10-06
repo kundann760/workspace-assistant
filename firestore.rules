@@ -1,0 +1,10 @@
+rules_version = '2';
+// All data access goes through the API server (Firebase Admin SDK bypasses these rules).
+// Browsers get NO direct Firestore access, so one tenant can never read another's data from the client.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

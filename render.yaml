@@ -1,0 +1,24 @@
+# Render Blueprint (optional): deploys the API as a free web service.
+# Render dashboard → New → Blueprint → pick your repo. Fill the env vars marked sync:false when prompted.
+services:
+  - type: web
+    name: workspace-assistant-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: NOTIFY_WEBHOOK_URL
+        sync: false

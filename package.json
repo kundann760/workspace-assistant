@@ -1,0 +1,16 @@
+{
+  "name": "multi-workspace-document-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-workspace RAG document assistant with tool calling (React + Node + Firebase Auth + Firestore vector search + Gemini)",
+  "scripts": {
+    "setup": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "test": "npm test --prefix server",
+    "test:e2e": "npm run test:e2e --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
