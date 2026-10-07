@@ -219,6 +219,14 @@ or similar). Use that one below.
 
 Without this, sign-in fails with `auth/unauthorized-domain`.
 
+**For "Continue with Google"**: on Vercel the app runs Firebase sign-in through its own domain (`/__/auth/*` is
+forwarded to `workspace-18c8b.firebaseapp.com` by `vercel.json`), so browsers that block cross-site storage don't
+bounce you back to `/login`. Google must be told about that address once:
+1. Google Cloud console (same project) → **APIs & Services → Credentials** → open **Web client (auto created by Google Service)**.
+2. Under **Authorized redirect URIs** → **Add URI** → `https://<your-domain>/__/auth/handler` → **Save**.
+
+Without this, Google shows `Error 400: redirect_uri_mismatch`.
+
 ## B7. Set CORS_ORIGINS and redeploy
 1. Vercel → your project → **Settings → Environment Variables → Add**:
    `CORS_ORIGINS` = `https://workspace-assistant.vercel.app` (your exact domain, with `https://`, no trailing slash).

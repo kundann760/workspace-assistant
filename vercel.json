@@ -11,6 +11,7 @@
     }
   },
   "rewrites": [
+    { "source": "/__/auth/:path*", "destination": "https://workspace-18c8b.firebaseapp.com/__/auth/:path*" },
     { "source": "/api/:path*", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
