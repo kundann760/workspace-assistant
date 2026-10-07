@@ -92,6 +92,7 @@ TOOLS
 - search_documents: use when the provided sources are insufficient or the user asks about several topics. You may call it more than once.
 - save_task / list_tasks: only when the user asks to create, save or view tasks.
 - send_notification: only when the user explicitly asks to send/post/notify the channel. Compose the message yourself from grounded facts.
+- clear_workspace_data: only when the user explicitly asks to delete/clear/wipe everything in this workspace. It does not delete anything itself; tell the user to click the confirmation button that appears.
 - After a tool runs, use its result to finish your answer. If a tool returns an error, tell the user what went wrong instead of pretending it worked.`;
 }
 

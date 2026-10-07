@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
-import { col, db, deleteWhere, nowIso } from '../lib/firestore';
+import { col, nowIso } from '../lib/firestore';
 import { badRequest } from '../lib/errors';
+import { clearWorkspaceData } from '../services/workspaceData';
 
 const MAX_WORKSPACES = 20;
 const nameSchema = z.object({ name: z.string().trim().min(1, 'Name is required').max(80) });
@@ -41,18 +41,16 @@ workspaceRouter.patch('/', async (req, res) => {
 });
 
 workspaceRouter.delete('/', async (req, res) => {
-  const ws = req.workspace!.id;
-  // Delete everything tagged with this workspace (chunks first, so nothing is left retrievable).
-  for (const collection of [col.chunks, col.documents, col.messages, col.tasks, col.toolCalls]) {
-    await deleteWhere(collection.where('workspace_id', '==', ws));
-  }
-  // Remove this workspace from documents other workspaces had shared into it.
-  const sharedIn = await col.documents.where('shared_with', 'array-contains', ws).get();
-  if (!sharedIn.empty) {
-    const batch = db.batch();
-    sharedIn.docs.forEach((d) => batch.update(d.ref, { shared_with: FieldValue.arrayRemove(ws) }));
-    await batch.commit();
-  }
-  await col.workspaces.doc(ws).delete();
+  await clearWorkspaceData(req.workspace!.id);
+  await col.workspaces.doc(req.workspace!.id).delete();
   res.status(204).end();
+});
+
+/**
+ * Wipe the workspace's data but keep the workspace. This is the human confirmation step for the
+ * assistant's `clear_workspace_data` tool: the tool only asks, this endpoint (a user click) deletes.
+ */
+workspaceRouter.post('/clear', async (req, res) => {
+  const deleted = await clearWorkspaceData(req.workspace!.id);
+  res.json({ deleted });
 });

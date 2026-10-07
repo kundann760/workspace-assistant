@@ -18,12 +18,13 @@ function embed(text) {
   }
   return v.some((x) => x) ? v : v.map((_, i) => (i === 0 ? 1 : 0));
 }
-const gem = { failNext: 0, requests: [] };
+const gem = { failNext: 0, requests: [], webhooks: [] };
 const mock = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     const json = JSON.parse(body);
+    if (req.url.startsWith('/webhook/')) { gem.webhooks.push(json); res.writeHead(200); return res.end('ok'); }
     if (req.headers['x-goog-api-key'] !== 'test-key') { res.writeHead(401); return res.end('{}'); }
     if (req.url.includes(':batchEmbedContents')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -46,6 +47,7 @@ const mock = http.createServer((req, res) => {
       const q = text.split('User question:').pop().toLowerCase();
       if (q.includes('save a task')) return sse([[{ text: 'Saving. ' }], [{ functionCall: { name: 'save_task', args: { title: 'Order VoltCell batteries', due_date: '2026-03-15' } }, thoughtSignature: 'SIG-123' }]]);
       if (q.includes('bogus')) return sse([[{ functionCall: { name: 'delete_everything', args: { confirm: true } } }]]);
+      if (q.includes('wipe everything')) return sse([[{ functionCall: { name: 'clear_workspace_data', args: {} } }]]);
       if (q.includes('bad args')) return sse([[{ functionCall: { name: 'save_task', args: { due_date: 'tomorrow' } } }]]);
       const hasSources = text.includes('<source id="1"');
       return sse(hasSources ? [[{ text: 'According to the docs, ' }], [{ text: 'the answer is there [1].' }]] : [[{ text: "I don't know based on the documents in this workspace." }]]);
@@ -68,6 +70,7 @@ async function sseChat(base, token, wsId, body) {
   Object.assign(process.env, {
     FIREBASE_PROJECT_ID: process.env.GCLOUD_PROJECT || 'demo-e2e', GEMINI_API_KEY: 'test-key',
     GEMINI_BASE_URL: 'http://127.0.0.1:9099/v1beta', PORT: '8089',
+    NOTIFY_WEBHOOK_URL: 'http://127.0.0.1:9099/webhook/hooks.slack.com/services/test',
   });
   // Initialise firebase-admin (server's copy) for the emulator, then stub token verification.
   const { initializeApp } = require(require.resolve('firebase-admin/app', { paths: [SERVER] }));
@@ -187,6 +190,26 @@ async function sseChat(base, token, wsId, body) {
     assert((await call('DELETE', `/workspaces/${B.id}`)).status === 204, 'delete workspace B');
     assert((await countWhere(col.chunks.where('workspace_id', '==', B.id))) === 0 && (await countWhere(col.messages.where('workspace_id', '==', B.id))) === 0, 'workspace B chunks + messages removed');
     assert((await countWhere(col.documents.where('shared_with', 'array-contains', B.id))) === 0, 'shares into deleted workspace removed');
+
+    // Notifications tab: manual send goes through the validated tool path and is listed in history
+    const n1 = await call('POST', `/workspaces/${A.id}/notifications`, 'user1', { message: 'Launch moved to Friday' });
+    assert(n1.status === 201 && gem.webhooks.length === 1 && /Launch moved to Friday/.test(gem.webhooks[0].text), 'manual notification posted to the webhook');
+    assert((await call('POST', `/workspaces/${A.id}/notifications`, 'user1', { message: '' })).status === 400, 'empty notification rejected');
+    const nList = await call('GET', `/workspaces/${A.id}/notifications`);
+    assert(nList.json.provider === 'slack' && nList.json.notifications.some((n) => n.source === 'user' && n.status === 'success'), 'notification history lists the manual send');
+    assert(!JSON.stringify(nList.json).includes('127.0.0.1'), 'webhook URL never returned to the client');
+    assert((await call('GET', `/workspaces/${A.id}/notifications`, 'user2')).status === 404, 'another user cannot read A notifications');
+
+    // "Delete everything" tool: the model can only request it; the user's POST /clear deletes
+    const w1 = await sseChat(base, 'user1', A.id, { message: 'Please wipe everything in this workspace' });
+    assert(w1.tools[0].name === 'clear_workspace_data' && w1.tools[0].status === 'success' && w1.done, 'clear_workspace_data tool call succeeds');
+    assert((await countWhere(col.chunks.where('workspace_id', '==', A.id))) > 0, 'the tool call alone deleted nothing');
+    assert((await call('POST', `/workspaces/${A.id}/clear`, 'user2')).status === 404, 'another user cannot clear A');
+    const cleared = await call('POST', `/workspaces/${A.id}/clear`);
+    assert(cleared.status === 200 && cleared.json.deleted.chunks > 0 && cleared.json.deleted.messages > 0, 'confirmed clear reports deleted counts');
+    const leftover = await Promise.all([col.chunks, col.documents, col.messages, col.tasks, col.toolCalls].map((c) => countWhere(c.where('workspace_id', '==', A.id))));
+    assert(leftover.every((n) => n === 0), 'workspace A documents, chunks, chat, tasks and tool log all removed');
+    assert((await col.workspaces.doc(A.id).get()).exists, 'workspace A itself still exists');
     console.log(process.exitCode ? '\nSOME TESTS FAILED' : '\nALL E2E CHECKS PASSED');
   } catch (e) {
     console.error(e);

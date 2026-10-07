@@ -76,6 +76,18 @@ describe('executeToolCall', () => {
     expect(result.status).toBe('error');
     expect(result.response.error).toMatch(/not configured/);
   });
+
+  it('clear_workspace_data only requests confirmation and deletes nothing', async () => {
+    const result = await executeToolCall({ name: 'clear_workspace_data', args: {} }, ctx());
+    expect(result.status).toBe('success');
+    expect(result.response.output).toMatchObject({ deleted: false, requires_confirmation: true });
+    expect(writes.map((w) => w.collection)).toEqual(['tool_calls']);
+  });
+
+  it('clear_workspace_data rejects a model-supplied workspace id', async () => {
+    const result = await executeToolCall({ name: 'clear_workspace_data', args: { workspace_id: 'other-ws' } }, ctx());
+    expect(result.status).toBe('rejected');
+  });
 });
 
 describe('prompt-injection hardening', () => {

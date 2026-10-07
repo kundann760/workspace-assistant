@@ -42,7 +42,41 @@ function ToolChips({ tools }: { tools: ToolCallSummary[] }) {
   );
 }
 
-export default function ChatPanel({ workspace }: { workspace: Workspace }) {
+/** The assistant's clear_workspace_data tool only asks; deletion happens when the user clicks here. */
+function ClearWorkspaceConfirm({ workspace, disabled, onCleared }: { workspace: Workspace; disabled: boolean; onCleared: () => void }) {
+  const [state, setState] = useState<'idle' | 'working' | 'cancelled'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!confirm(`Permanently delete ALL documents, chat history, tasks and logs in “${workspace.name}”? This cannot be undone.`)) return;
+    setState('working');
+    setError(null);
+    try {
+      await api(`/workspaces/${workspace.id}/clear`, { method: 'POST' });
+      onCleared();
+    } catch (err) {
+      setError((err as Error).message);
+      setState('idle');
+    }
+  };
+
+  if (state === 'cancelled') return <div className="muted small">Deletion cancelled. Nothing was deleted.</div>;
+  return (
+    <div className="alert error small">
+      The assistant wants to delete <b>everything</b> in this workspace: documents, chat history, tasks, tool calls and
+      observability data.{' '}
+      <button className="small-btn" disabled={disabled || state === 'working'} onClick={run}>
+        {state === 'working' ? 'Deleting…' : '🗑 Delete everything'}
+      </button>{' '}
+      <button className="link small" disabled={state === 'working'} onClick={() => setState('cancelled')}>
+        Cancel
+      </button>
+      {error && <div>{error}</div>}
+    </div>
+  );
+}
+
+export default function ChatPanel({ workspace, onWorkspaceCleared }: { workspace: Workspace; onWorkspaceCleared?: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -195,6 +229,17 @@ export default function ChatPanel({ workspace }: { workspace: Workspace }) {
             <div key={m.id} className="msg assistant">
               <div className="bubble">
                 <ToolChips tools={m.tool_calls ?? []} />
+                {m.status === 'complete' &&
+                  m.tool_calls?.some((t) => t.name === 'clear_workspace_data' && t.status === 'success') && (
+                    <ClearWorkspaceConfirm
+                      workspace={workspace}
+                      disabled={busy}
+                      onCleared={() => {
+                        setMessages([]);
+                        onWorkspaceCleared?.();
+                      }}
+                    />
+                  )}
                 {m.content ? (
                   <div className="answer">{renderAnswer(m.content, m.citations ?? [])}</div>
                 ) : m.status === 'pending' ? (

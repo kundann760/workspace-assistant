@@ -6,7 +6,8 @@
  *  - Arguments are validated against a strict zod schema before anything executes.
  *  - The workspace a tool acts on comes from the authenticated request context, never from model
  *    arguments, so a prompt-injected document can't redirect a tool at another workspace.
- *  - There are no destructive tools (no delete/update of documents, no arbitrary HTTP).
+ *  - No tool deletes anything by itself (and there is no arbitrary HTTP). `clear_workspace_data` only
+ *    asks: the UI shows a confirm button and the deletion runs on the user's click (POST /clear).
  */
 import { z } from 'zod';
 import { config } from '../config';
@@ -83,8 +84,17 @@ function escapeAttr(value: string): string {
   return value.replace(/["<>]/g, '');
 }
 
+/** Which chat service the webhook points at (the URL itself is a secret and never leaves the server). */
+export function notificationProvider(): 'discord' | 'slack' | 'webhook' | null {
+  const url = config.NOTIFY_WEBHOOK_URL;
+  if (!url) return null;
+  if (/discord(?:app)?\.com\/api\/webhooks\//.test(url)) return 'discord';
+  if (/hooks\.slack\.com\//.test(url)) return 'slack';
+  return 'webhook';
+}
+
 async function postWebhook(url: string, text: string): Promise<void> {
-  const isDiscord = /discord(?:app)?\.com\/api\/webhooks\//.test(url);
+  const isDiscord = notificationProvider() === 'discord';
   // Discord: disable @everyone/@here/role mentions so injected text can't ping a whole server.
   const payload = isDiscord ? { content: text, allowed_mentions: { parse: [] } } : { text };
   const controller = new AbortController();
@@ -210,6 +220,20 @@ export const TOOL_REGISTRY = {
       await postWebhook(config.NOTIFY_WEBHOOK_URL, `*[${ctx.workspaceName}]* ${args.message}`);
       return { sent: true, characters: args.message.length };
     },
+  }),
+
+  clear_workspace_data: defineTool({
+    declaration: {
+      name: 'clear_workspace_data',
+      description:
+        "Request deletion of EVERYTHING in the active workspace: documents, chat history, tasks, tool-call log and observability data. Nothing is deleted by this call: the user is shown a confirmation button and must click it. Only call this when the user explicitly asks to delete/clear/wipe everything in this workspace.",
+    },
+    schema: z.object({}).strict(),
+    run: async () => ({
+      deleted: false,
+      requires_confirmation: true,
+      note: 'Nothing has been deleted yet. A "Delete everything" confirmation button is now shown to the user; tell them to click it to proceed.',
+    }),
   }),
 };
 

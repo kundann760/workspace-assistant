@@ -1,10 +1,12 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +19,7 @@ function friendlyError(err: unknown): string {
     'auth/email-already-in-use': 'An account with this email already exists. Sign in instead.',
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/popup-closed-by-user': 'The Google sign-in window was closed.',
+    'auth/popup-blocked': 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
     'auth/operation-not-allowed': 'This sign-in method is not enabled in your Firebase project (see SETUP_GUIDE.md, step 2).',
     'auth/unauthorized-domain': 'This domain is not authorised in Firebase → Authentication → Settings → Authorized domains.',
     'auth/too-many-requests': 'Too many attempts. Try again in a few minutes.',
@@ -32,6 +35,11 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // Surface errors from a redirect-based Google sign-in (the success case is picked up by onAuthStateChanged).
+  useEffect(() => {
+    getRedirectResult(auth).catch((err) => setError(friendlyError(err)));
+  }, []);
 
   if (user) return <Navigate to="/" replace />;
 
@@ -54,6 +62,17 @@ export default function LoginPage() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
+      const code = (err as { code?: string })?.code;
+      // The browser blocked the popup (popup blocker, in-app browser, strict privacy mode): sign in on this page instead.
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectErr) {
+          setError(friendlyError(redirectErr));
+          return;
+        }
+      }
       setError(friendlyError(err));
     }
   };

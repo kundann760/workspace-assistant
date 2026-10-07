@@ -8,8 +8,9 @@ import DocumentsPanel from '../components/DocumentsPanel';
 import TasksPanel from '../components/TasksPanel';
 import ToolLogPanel from '../components/ToolLogPanel';
 import MetricsPanel from '../components/MetricsPanel';
+import NotificationsPanel from '../components/NotificationsPanel';
 
-const TABS = ['Chat', 'Documents', 'Tasks', 'Tool calls', 'Observability'] as const;
+const TABS = ['Chat', 'Documents', 'Tasks', 'Notifications', 'Tool call Logs', 'Observability'] as const;
 type Tab = (typeof TABS)[number];
 const ACTIVE_KEY = 'activeWorkspaceId';
 
@@ -112,12 +113,13 @@ export default function DashboardPage() {
             </header>
             {/* key={active.id} remounts panels on switch, so no state can leak between workspaces */}
             <section className="panel" key={`${active.id}-${tab}`}>
-              {tab === 'Chat' && <ChatPanel workspace={active} />}
+              {tab === 'Chat' && <ChatPanel workspace={active} onWorkspaceCleared={loadWorkspaces} />}
               {tab === 'Documents' && (
                 <DocumentsPanel workspace={active} workspaces={workspaces} onChanged={loadWorkspaces} />
               )}
               {tab === 'Tasks' && <TasksPanel workspace={active} />}
-              {tab === 'Tool calls' && <ToolLogPanel workspace={active} />}
+              {tab === 'Notifications' && <NotificationsPanel workspace={active} />}
+              {tab === 'Tool call Logs' && <ToolLogPanel workspace={active} />}
               {tab === 'Observability' && <MetricsPanel workspace={active} />}
             </section>
           </>

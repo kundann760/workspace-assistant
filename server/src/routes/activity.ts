@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { col, parseJson } from '../lib/firestore';
-import { notFound } from '../lib/errors';
+import { badRequest, HttpError, notFound } from '../lib/errors';
 import { isId } from '../middleware/auth';
+import { executeToolCall, notificationProvider, SourceRegistry } from '../services/tools';
+
+/** tool_calls.message_id for notifications sent from the Notifications tab rather than by the assistant. */
+const MANUAL_MESSAGE_ID = 'manual';
 
 /** Tasks, tool-call log and observability metrics for the active workspace. */
 export const activityRouter = Router();
@@ -63,6 +67,38 @@ activityRouter.get('/tool-calls', async (req, res) => {
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
     .slice(0, 200);
   res.json({ toolCalls });
+});
+
+/** Notifications posted to Slack/Discord from this workspace (by the assistant or from the Notifications tab). */
+activityRouter.get('/notifications', async (req, res) => {
+  const snap = await col.toolCalls.where('workspace_id', '==', req.workspace!.id).get();
+  const notifications = snap.docs
+    .filter((d) => d.get('tool_name') === 'send_notification')
+    .map((d) => {
+      const args = parseJson(d.get('arguments')) as { message?: string } | null;
+      return {
+        id: d.id,
+        message: args?.message ?? null,
+        source: d.get('message_id') === MANUAL_MESSAGE_ID ? 'user' : 'assistant',
+        status: d.get('status'),
+        error: d.get('error'),
+        created_at: d.get('created_at'),
+      };
+    })
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 100);
+  res.json({ provider: notificationProvider(), notifications });
+});
+
+/** Send a notification by hand. Goes through the same validated + logged tool path as the assistant. */
+activityRouter.post('/notifications', async (req, res) => {
+  const execution = await executeToolCall(
+    { name: 'send_notification', args: req.body ?? {} },
+    { workspaceId: req.workspace!.id, workspaceName: req.workspace!.name, messageId: MANUAL_MESSAGE_ID, sources: new SourceRegistry() },
+  );
+  if (execution.status === 'rejected') throw badRequest(execution.error ?? 'Invalid message');
+  if (execution.status === 'error') throw new HttpError(502, execution.error ?? 'Sending failed');
+  res.status(201).json({ sent: true, id: execution.logId });
 });
 
 activityRouter.get('/metrics', async (req, res) => {

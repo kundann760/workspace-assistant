@@ -123,6 +123,15 @@ export interface ToolCallLog {
   question: string | null;
 }
 
+export interface NotificationItem {
+  id: string;
+  message: string | null;
+  source: 'assistant' | 'user';
+  status: 'success' | 'error' | 'rejected';
+  error: string | null;
+  created_at: string;
+}
+
 export interface MetricsResponse {
   summary: {
     requests: number;

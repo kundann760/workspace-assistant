@@ -39,7 +39,8 @@ export interface GeminiContent {
 export interface FunctionDeclaration {
   name: string;
   description: string;
-  parameters: Record<string, unknown>;
+  /** Omit for tools without arguments (Gemini rejects an OBJECT with no properties). */
+  parameters?: Record<string, unknown>;
 }
 
 export interface Usage {
